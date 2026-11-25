@@ -104,7 +104,7 @@ Kirigami.ScrollablePage {
 
         RowLayout {
             Kirigami.FormData.label: i18n("Developer options:")
-            visible: root.phone.known
+            visible: !!root.phone.known
             OnOff {
                 on: root.phone.developerOptions || false
             }
@@ -117,7 +117,7 @@ Kirigami.ScrollablePage {
         }
 
         QQC2.Label {
-            visible: root.phone.known && !root.phone.developerOptions
+            visible: !!root.phone.known && !root.phone.developerOptions
             text: i18n("Tap the notification on the device to open About phone, then tap \"Build number\" seven times. Some devices list it under Software information.")
             wrapMode: Text.Wrap
             Layout.maximumWidth: Kirigami.Units.gridUnit * 22
@@ -125,12 +125,12 @@ Kirigami.ScrollablePage {
 
         RowLayout {
             Kirigami.FormData.label: i18n("USB debugging:")
-            visible: root.phone.known
+            visible: !!root.phone.known
             OnOff {
                 on: root.phone.usbDebugging || false
             }
             QQC2.Button {
-                visible: !root.phone.usbDebugging && root.phone.developerOptions
+                visible: !root.phone.usbDebugging && !!root.phone.developerOptions
                 text: i18n("Open on Device")
                 icon.name: "smartphone"
                 onClicked: mirrorPhone.openOnPhone("developer")
@@ -139,12 +139,12 @@ Kirigami.ScrollablePage {
 
         RowLayout {
             Kirigami.FormData.label: i18n("Wireless debugging:")
-            visible: root.phone.known
+            visible: !!root.phone.known
             OnOff {
                 on: root.phone.wirelessDebugging || false
             }
             QQC2.Button {
-                visible: !root.phone.wirelessDebugging && root.phone.developerOptions
+                visible: !root.phone.wirelessDebugging && !!root.phone.developerOptions
                 text: root.phone.canEnable ? i18n("Turn On") : i18n("Open on Device")
                 icon.name: root.phone.canEnable ? "network-wireless" : "smartphone"
                 onClicked: root.phone.canEnable ? mirrorPhone.enableWirelessDebugging() : mirrorPhone.openOnPhone("developer")
@@ -153,7 +153,7 @@ Kirigami.ScrollablePage {
 
         QQC2.Label {
             Kirigami.FormData.label: i18n("Turn on by itself:")
-            visible: root.phone.known
+            visible: !!root.phone.known
             text: root.phone.canEnable
                 ? i18n("Allowed: the device turns Wireless debugging on when this computer needs it")
                 : i18n("Allowed automatically the first time this computer connects over adb, by USB or Wireless debugging")
