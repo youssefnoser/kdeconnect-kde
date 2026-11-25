@@ -12,11 +12,17 @@ import QtQuick.Dialogs
 import QtQml.Models
 import org.kde.kirigami as Kirigami
 import org.kde.kdeconnect
+import org.kde.kdeconnect.private.mirrorphone
 
 Kirigami.ScrollablePage {
     id: root
     property QtObject currentDevice
     title: currentDevice.name
+
+    MirrorPhoneDevice {
+        id: mirrorPhone
+        deviceId: root.currentDevice ? root.currentDevice.id() : ""
+    }
 
     BatteryInfo {
         id: batteryInfo
@@ -226,6 +232,14 @@ Kirigami.ScrollablePage {
                 interfaceFactory: RemoteSystemVolumeDbusInterfaceFactory
                 component: "volume.qml"
                 pluginName: "remotesystemvolume"
+                section: "control"
+                device: root.currentDevice
+            },
+            PluginItem {
+                pluginName: "mirrorphone"
+                name: i18nd("kdeconnect-app", "Mirror screen")
+                iconNameOverride: "video-display"
+                onClick: () => mirrorPhone.mirror()
                 section: "control"
                 device: root.currentDevice
             },

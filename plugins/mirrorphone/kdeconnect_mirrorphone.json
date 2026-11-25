@@ -1,0 +1,24 @@
+{
+    "$schema": "../kdeconnect.schema.json",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "KDE Connect contributors"
+            }
+        ],
+        "Description": "Show the phone's screen in a window on this computer",
+        "EnabledByDefault": true,
+        "Icon": "smartphone",
+        "License": "GPL",
+        "Name": "Mirror Phone"
+    },
+    "X-KdeConnect-OutgoingPacketType": [
+        "kdeconnect.mirrorphone.response",
+        "kdeconnect.mirrorphone.adb",
+        "kdeconnect.mirrorphone.status"
+    ],
+    "X-KdeConnect-SupportedPacketType": [
+        "kdeconnect.mirrorphone.request",
+        "kdeconnect.mirrorphone.adb.status"
+    ]
+}
