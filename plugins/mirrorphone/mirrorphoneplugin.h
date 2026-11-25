@@ -22,6 +22,7 @@ class QProcess;
 #define PACKET_TYPE_MIRRORPHONE_ADB QStringLiteral("kdeconnect.mirrorphone.adb")
 #define PACKET_TYPE_MIRRORPHONE_ADB_STATUS QStringLiteral("kdeconnect.mirrorphone.adb.status")
 #define PACKET_TYPE_MIRRORPHONE_STATUS QStringLiteral("kdeconnect.mirrorphone.status")
+#define PACKET_TYPE_MIRRORPHONE_LOCK QStringLiteral("kdeconnect.mirrorphone.lock")
 
 /**
  * Shows the phone's screen, or one app of the phone on a virtual display, in a scrcpy window.
@@ -104,6 +105,10 @@ private:
                      const QStringList &arguments,
                      const QString &serial,
                      Origin origin);
+    void isLocked(const QString &serial, const std::function<void(bool locked)> &callback);
+    void lockChanged(bool locked, bool screenOn);
+    void showUnlockPrompt(const QString &key, const QString &serial);
+    void whenAppStarted(const QString &key, const std::function<void(int display)> &callback);
 
     void reply(const QString &action, const QString &error, Origin origin);
     void notifySetup(const QString &text);
@@ -141,5 +146,8 @@ private:
 
     QProcess *m_appsRequest = nullptr;
     QHash<QString, QProcess *> m_windows;
+    // The virtual display each window started its app on, as scrcpy reports it, and who waits for that
+    QHash<QString, int> m_windowDisplays;
+    QHash<QString, std::function<void(int display)>> m_displayWaiters;
     QString m_audioWindow;
 };

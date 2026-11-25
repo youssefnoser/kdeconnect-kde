@@ -19,6 +19,7 @@
     ],
     "X-KdeConnect-SupportedPacketType": [
         "kdeconnect.mirrorphone.request",
-        "kdeconnect.mirrorphone.adb.status"
+        "kdeconnect.mirrorphone.adb.status",
+        "kdeconnect.mirrorphone.lock"
     ]
 }

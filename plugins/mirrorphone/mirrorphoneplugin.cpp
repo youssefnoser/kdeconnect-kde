@@ -44,6 +44,8 @@ static constexpr qint64 USB_AUTHORIZATION_WAIT_MS = 60000;
 static constexpr int ADB_POLL_MS = 1500;
 static constexpr qint64 QR_PAIRING_WAIT_MS = 120000;
 static constexpr qint64 CODE_PAIRING_WAIT_MS = 30000;
+// Shown over an app opened on a locked phone, until the phone is unlocked
+static const QString UNLOCK_PROMPT = ANDROID_PACKAGE + QStringLiteral("/org.kde.kdeconnect.plugins.mirrorphone.UnlockPromptActivity");
 
 MirrorPhonePlugin::~MirrorPhonePlugin()
 {
@@ -120,6 +122,8 @@ void MirrorPhonePlugin::receivePacket(const NetworkPacket &np)
         } else {
             qCWarning(KDECONNECT_PLUGIN_MIRRORPHONE) << "Unknown action" << action;
         }
+    } else if (np.type() == PACKET_TYPE_MIRRORPHONE_LOCK) {
+        lockChanged(np.get<bool>(QStringLiteral("locked")), np.get<bool>(QStringLiteral("screenOn")));
     } else if (np.type() == PACKET_TYPE_MIRRORPHONE_ADB_STATUS) {
         m_phone = QJsonObject{
             {QStringLiteral("known"), true},
@@ -175,14 +179,26 @@ void MirrorPhonePlugin::openApp(const QString &package, const QString &label, Or
             reply(QStringLiteral("openApp"), error, origin);
             return;
         }
-        // A virtual display of the phone's size, so that the phone's own screen stays free, without status and navigation
-        // bars, as it shows just the app
-        startWindow(QStringLiteral("openApp"),
-                    package,
-                    i18nc("@title:window app name, phone name", "%1 - %2", name, device()->name()),
-                    {QStringLiteral("--new-display"), QStringLiteral("--no-vd-system-decorations"), QStringLiteral("--start-app=") + package},
-                    serial,
-                    origin);
+        isLocked(serial, [this, package, name, serial, origin](bool locked) {
+            const bool alreadyOpen = m_windows.contains(package);
+            // A virtual display of the phone's size, so that the phone's own screen stays free, without status and navigation
+            // bars, as it shows just the app
+            startWindow(QStringLiteral("openApp"),
+                        package,
+                        i18nc("@title:window app name, phone name", "%1 - %2", name, device()->name()),
+                        {QStringLiteral("--new-display"), QStringLiteral("--no-vd-system-decorations"), QStringLiteral("--start-app=") + package},
+                        serial,
+                        origin);
+            if (alreadyOpen || !m_windows.contains(package)) {
+                return;
+            }
+            if (locked) {
+                // A sleeping phone keeps the app's display asleep too, which then shows nothing, and scrcpy does not wake
+                // it for a display of its own
+                runShell(serial, {QStringLiteral("input"), QStringLiteral("keyevent"), QStringLiteral("KEYCODE_WAKEUP")});
+                showUnlockPrompt(package, serial);
+            }
+        });
     });
 }
 
@@ -736,13 +752,29 @@ void MirrorPhonePlugin::startWindow(const QString &action,
     process->setProcessChannelMode(QProcess::MergedChannels);
     m_windows.insert(key, process);
 
+    // Read as it comes, for when scrcpy starts the app and on which display; kept for the error message at the end
     auto output = std::make_shared<QByteArray>();
-    connect(process, &QProcess::readyReadStandardOutput, this, [process, output] {
+    connect(process, &QProcess::readyReadStandardOutput, this, [this, key, process, output] {
         output->append(process->readAllStandardOutput());
+        if (m_windowDisplays.contains(key)) {
+            return;
+        }
+        // "[server] INFO: Starting app "Settings" [com.android.settings] on display 33..."
+        static const QRegularExpression appStarted(QStringLiteral("Starting app .* on display (\\d+)"));
+        const QRegularExpressionMatch match = appStarted.match(QString::fromUtf8(*output));
+        if (match.hasMatch()) {
+            const int display = match.captured(1).toInt();
+            m_windowDisplays.insert(key, display);
+            if (const auto waiter = m_displayWaiters.take(key)) {
+                waiter(display);
+            }
+        }
     });
 
     connect(process, &QProcess::finished, this, [this, key, title, process, output](int exitCode, QProcess::ExitStatus exitStatus) {
         m_windows.remove(key);
+        m_windowDisplays.remove(key);
+        m_displayWaiters.remove(key);
         if (m_audioWindow == key) {
             m_audioWindow.clear();
         }
@@ -787,6 +819,60 @@ void MirrorPhonePlugin::startWindow(const QString &action,
     allArguments << QStringLiteral("--window-title=") + title;
     qCDebug(KDECONNECT_PLUGIN_MIRRORPHONE) << "Starting scrcpy" << allArguments;
     process->start(tool(QStringLiteral("scrcpy")), allArguments);
+}
+
+void MirrorPhonePlugin::isLocked(const QString &serial, const std::function<void(bool locked)> &callback)
+{
+    runShell(serial, {QStringLiteral("dumpsys"), QStringLiteral("window"), QStringLiteral("|"), QStringLiteral("grep"), QStringLiteral("-m1"), QStringLiteral("isKeyguardShowing")},
+             [callback](int, const QString &output) {
+                 callback(output.contains(QLatin1String("isKeyguardShowing=true")));
+             });
+}
+
+void MirrorPhonePlugin::lockChanged(bool locked, bool screenOn)
+{
+    // The phone reports these as they happen; they matter to the windows of apps, which have displays of their own
+    QStringList apps = m_windows.keys();
+    apps.removeOne(QStringLiteral("screen"));
+    if (apps.isEmpty() || m_serial.isEmpty()) {
+        return;
+    }
+    if (!screenOn) {
+        // A sleeping phone puts the apps' displays to sleep too, which then show nothing: wake it, still locked
+        runShell(m_serial, {QStringLiteral("input"), QStringLiteral("keyevent"), QStringLiteral("KEYCODE_WAKEUP")});
+    } else if (locked) {
+        for (const QString &app : std::as_const(apps)) {
+            showUnlockPrompt(app, m_serial);
+        }
+    }
+}
+
+void MirrorPhonePlugin::showUnlockPrompt(const QString &key, const QString &serial)
+{
+    // On a locked phone the app shows but takes no input, and the lock screen cannot be used from here, as Android hides
+    // it from screen capture: a prompt of the phone's KDE Connect goes over the app, asks to unlock the phone and closes
+    // once it is
+    whenAppStarted(key, [this, key, serial](int display) {
+        runShell(serial,
+                 {QStringLiteral("am"),
+                  QStringLiteral("start"),
+                  QStringLiteral("--display"),
+                  QString::number(display),
+                  QStringLiteral("-n"),
+                  UNLOCK_PROMPT,
+                  QStringLiteral("--es"),
+                  QStringLiteral("package"),
+                  key});
+    });
+}
+
+void MirrorPhonePlugin::whenAppStarted(const QString &key, const std::function<void(int display)> &callback)
+{
+    if (m_windowDisplays.contains(key)) {
+        callback(m_windowDisplays.value(key));
+    } else if (m_windows.contains(key)) {
+        m_displayWaiters.insert(key, callback);
+    }
 }
 
 // ----------------------------------------------------------------
