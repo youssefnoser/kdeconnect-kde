@@ -27,8 +27,8 @@ class QProcess;
  * Shows the phone's screen in a scrcpy window.
  *
  * scrcpy needs adb. This plugin finds the phone among the adb devices, over USB or Wireless
- * debugging, by the phone's KDE Connect address. The phone reports its developer settings and
- * turns Wireless debugging on when asked.
+ * debugging, by the phone's KDE Connect address. The phone reports its developer settings,
+ * turns Wireless debugging on when asked, and this plugin pairs with it by QR or pairing code.
  */
 class MirrorPhonePlugin : public KdeConnectPlugin
 {
@@ -45,7 +45,7 @@ public:
 
     Q_SCRIPTABLE void mirrorScreen();
 
-    /// JSON: tools, connection, busy, message, and phone; see statusJson()
+    /// JSON: tools, connection, busy, message, phone and pairing; see statusJson()
     Q_SCRIPTABLE QString status() const;
     /// Asks the phone for its settings and looks for it among the adb devices, without changing anything
     Q_SCRIPTABLE void refreshStatus();
@@ -53,6 +53,11 @@ public:
     Q_SCRIPTABLE void enableWirelessDebugging();
     /// "developer" or "about": shows a notification on the phone that opens these settings
     Q_SCRIPTABLE void openOnPhone(const QString &target);
+    /// The text for the QR code, which the phone scans in Wireless debugging, comes with the status
+    Q_SCRIPTABLE void startQrPairing();
+    /// With "Pair device with pairing code" open on the phone
+    Q_SCRIPTABLE void pairWithCode(const QString &code);
+    Q_SCRIPTABLE void cancelPairing();
 
 Q_SIGNALS:
     Q_SCRIPTABLE void statusChanged(const QString &status);
@@ -78,6 +83,12 @@ private:
     void runShell(const QString &serial, const QStringList &command, const ProcessCallback &callback = {});
     QSet<QString> phoneAddresses() const;
     void sendAdbRequest(const QString &action, const QString &target = QString());
+
+    // Pairing for Wireless debugging
+    void pollPairing();
+    void runPair(const QString &address, const QString &secret);
+    void setPairing(const QString &state, const QString &message);
+    void clearPairingSecrets();
 
     // scrcpy windows
     QProcess *newScrcpyProcess();
@@ -113,6 +124,14 @@ private:
     QString m_serial;
     QString m_message;
     QJsonObject m_phone;
+
+    QString m_pairingState = QStringLiteral("idle");
+    QString m_pairingMessage;
+    QString m_qrName;
+    QString m_qrPassword;
+    QString m_pairingCode;
+    QElapsedTimer m_pairingTimer;
+    int m_pairingGeneration = 0;
 
     QHash<QString, QProcess *> m_windows;
     QString m_audioWindow;

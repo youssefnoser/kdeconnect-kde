@@ -111,6 +111,22 @@ void MirrorPhoneDevice::openOnPhone(const QString &target)
     call(QStringLiteral("openOnPhone"), {target});
 }
 
+void MirrorPhoneDevice::startQrPairing()
+{
+    // The QR text arrives with the status
+    call(QStringLiteral("startQrPairing"));
+}
+
+void MirrorPhoneDevice::pairWithCode(const QString &code)
+{
+    call(QStringLiteral("pairWithCode"), {code});
+}
+
+void MirrorPhoneDevice::cancelPairing()
+{
+    call(QStringLiteral("cancelPairing"));
+}
+
 void MirrorPhoneDevice::mirror()
 {
     call(QStringLiteral("mirrorScreen"));

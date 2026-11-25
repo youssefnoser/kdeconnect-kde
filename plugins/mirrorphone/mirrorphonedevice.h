@@ -29,6 +29,9 @@ public:
     Q_INVOKABLE void connectAdb();
     Q_INVOKABLE void enableWirelessDebugging();
     Q_INVOKABLE void openOnPhone(const QString &target);
+    Q_INVOKABLE void startQrPairing();
+    Q_INVOKABLE void pairWithCode(const QString &code);
+    Q_INVOKABLE void cancelPairing();
     Q_INVOKABLE void mirror();
 
 Q_SIGNALS:

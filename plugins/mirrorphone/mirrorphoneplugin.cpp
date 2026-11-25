@@ -17,6 +17,7 @@
 #include <QJsonDocument>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QRandomGenerator>
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QTimer>
@@ -31,6 +32,7 @@
 K_PLUGIN_CLASS_WITH_JSON(MirrorPhonePlugin, "kdeconnect_mirrorphone.json")
 
 static const QString ADB_TLS_SERVICE = QStringLiteral("_adb-tls-connect._tcp");
+static const QString ADB_PAIRING_SERVICE = QStringLiteral("_adb-tls-pairing._tcp");
 // The KDE Connect app, which turns Wireless debugging on when it has this permission
 static const QString ANDROID_PACKAGE = QStringLiteral("org.kde.kdeconnect_tp");
 static const QString WRITE_SECURE_SETTINGS = QStringLiteral("android.permission.WRITE_SECURE_SETTINGS");
@@ -39,6 +41,8 @@ static constexpr qint64 ADB_WAIT_MS = 25000;
 // How long to wait for the user to allow USB debugging on the phone
 static constexpr qint64 USB_AUTHORIZATION_WAIT_MS = 60000;
 static constexpr int ADB_POLL_MS = 1500;
+static constexpr qint64 QR_PAIRING_WAIT_MS = 120000;
+static constexpr qint64 CODE_PAIRING_WAIT_MS = 30000;
 
 MirrorPhonePlugin::~MirrorPhonePlugin()
 {
@@ -169,6 +173,12 @@ QJsonObject MirrorPhonePlugin::statusJson() const
         {QStringLiteral("busy"), m_adbBusy},
         {QStringLiteral("message"), m_message},
         {QStringLiteral("phone"), phone},
+        {QStringLiteral("pairing"),
+         QJsonObject{
+             {QStringLiteral("state"), m_pairingState},
+             {QStringLiteral("message"), m_pairingMessage},
+             {QStringLiteral("qr"), m_qrName.isEmpty() ? QString() : QStringLiteral("WIFI:T:ADB;S:%1;P:%2;;").arg(m_qrName, m_qrPassword)},
+         }},
     };
 }
 
@@ -187,12 +197,14 @@ void MirrorPhonePlugin::emitStatus()
 
 void MirrorPhonePlugin::sendStatusToPhone()
 {
-    // What the settings page shows, without the phone's own settings, which the phone knows
+    // What the settings page shows, without the phone's own settings, which the phone knows, and the QR code's secret
     NetworkPacket np(PACKET_TYPE_MIRRORPHONE_STATUS,
                      {
                          {QStringLiteral("transport"), transport()},
                          {QStringLiteral("busy"), m_adbBusy},
                          {QStringLiteral("message"), m_message},
+                         {QStringLiteral("pairingState"), m_pairingState},
+                         {QStringLiteral("pairingMessage"), m_pairingMessage},
                          {QStringLiteral("adb"), tool(QStringLiteral("adb"))},
                          {QStringLiteral("scrcpy"), tool(QStringLiteral("scrcpy"))},
                      });
@@ -478,6 +490,131 @@ void MirrorPhonePlugin::runAdb(const QStringList &arguments, const ProcessCallba
 void MirrorPhonePlugin::runShell(const QString &serial, const QStringList &command, const ProcessCallback &callback)
 {
     runAdb(QStringList{QStringLiteral("-s"), serial, QStringLiteral("shell")} + command, callback);
+}
+
+// ---------------------------------------------------------------- pairing
+
+void MirrorPhonePlugin::startQrPairing()
+{
+    if (tool(QStringLiteral("adb")).isEmpty()) {
+        setPairing(QStringLiteral("failed"), i18n("adb is not installed."));
+        return;
+    }
+    // Letters and digits only, as the QR code's format reserves some characters
+    const auto randomText = [](int length) {
+        static const QLatin1String characters("abcdefghijklmnopqrstuvwxyz0123456789");
+        QString text;
+        for (int i = 0; i < length; ++i) {
+            text.append(characters.at(QRandomGenerator::system()->bounded(int(characters.size()))));
+        }
+        return text;
+    };
+    clearPairingSecrets();
+    m_qrName = QStringLiteral("kdeconnect-") + randomText(10);
+    m_qrPassword = randomText(12);
+    m_pairingTimer.start();
+    ++m_pairingGeneration;
+    setPairing(QStringLiteral("scan"),
+               i18n("On %1, open Developer options -> Wireless debugging -> Pair device with QR code, and scan this code.", device()->name()));
+    pollPairing();
+}
+
+void MirrorPhonePlugin::pairWithCode(const QString &code)
+{
+    static const QRegularExpression codePattern(QRegularExpression::anchoredPattern(QStringLiteral("\\d{6}")));
+    if (!codePattern.match(code.trimmed()).hasMatch()) {
+        setPairing(QStringLiteral("failed"), i18n("Enter the six-digit pairing code shown on the phone."));
+        return;
+    } else if (tool(QStringLiteral("adb")).isEmpty()) {
+        setPairing(QStringLiteral("failed"), i18n("adb is not installed."));
+        return;
+    }
+    clearPairingSecrets();
+    m_pairingCode = code.trimmed();
+    m_pairingTimer.start();
+    ++m_pairingGeneration;
+    setPairing(QStringLiteral("code"), i18n("Looking for %1...", device()->name()));
+    pollPairing();
+}
+
+void MirrorPhonePlugin::cancelPairing()
+{
+    ++m_pairingGeneration;
+    clearPairingSecrets();
+    setPairing(QStringLiteral("idle"), QString());
+}
+
+void MirrorPhonePlugin::clearPairingSecrets()
+{
+    m_qrName.clear();
+    m_qrPassword.clear();
+    m_pairingCode.clear();
+}
+
+void MirrorPhonePlugin::setPairing(const QString &state, const QString &message)
+{
+    m_pairingState = state;
+    m_pairingMessage = message;
+    emitStatus();
+}
+
+void MirrorPhonePlugin::pollPairing()
+{
+    const int generation = m_pairingGeneration;
+    runAdb({QStringLiteral("mdns"), QStringLiteral("services")}, [this, generation](int, const QString &output) {
+        if (generation != m_pairingGeneration) {
+            return; // cancelled or restarted
+        }
+        // After "Pair device with QR code", the phone offers pairing as an mDNS service named as in the code;
+        // after "Pair device with pairing code", under some name, at its address
+        const QSet<QString> addresses = phoneAddresses();
+        for (const auto &[name, address] : mdnsServices(output, ADB_PAIRING_SERVICE).asKeyValueRange()) {
+            if (!m_qrName.isEmpty() && name == m_qrName) {
+                runPair(address, m_qrPassword);
+                return;
+            } else if (!m_pairingCode.isEmpty() && addresses.contains(hostOf(address))) {
+                runPair(address, m_pairingCode);
+                return;
+            }
+        }
+        if (m_pairingTimer.elapsed() > (m_qrName.isEmpty() ? CODE_PAIRING_WAIT_MS : QR_PAIRING_WAIT_MS)) {
+            const QString message = m_qrName.isEmpty()
+                ? i18n("Could not find %1 offering a pairing code. Open \"Pair device with pairing code\" on the phone, then enter the code.", device()->name())
+                : i18n("The QR code was not scanned in time. Show a new code to try again.");
+            clearPairingSecrets();
+            setPairing(QStringLiteral("failed"), message);
+            return;
+        }
+        QTimer::singleShot(1000, this, [this, generation] {
+            if (generation == m_pairingGeneration) {
+                pollPairing();
+            }
+        });
+    });
+}
+
+void MirrorPhonePlugin::runPair(const QString &address, const QString &secret)
+{
+    const int generation = ++m_pairingGeneration;
+    setPairing(QStringLiteral("pairing"), i18n("Pairing with %1...", device()->name()));
+    // A wrong address can leave adb waiting for minutes
+    runAdb(
+        {QStringLiteral("pair"), address, secret},
+        [this, generation](int exitCode, const QString &output) {
+            if (generation != m_pairingGeneration) {
+                return;
+            }
+            clearPairingSecrets();
+            qCDebug(KDECONNECT_PLUGIN_MIRRORPHONE) << "adb pair:" << exitCode << output.trimmed();
+            if (exitCode == 0 && output.contains(QLatin1String("Successfully paired"))) {
+                setPairing(QStringLiteral("paired"), i18n("Paired. This computer connects to %1 over Wireless debugging from now on.", device()->name()));
+                // The phone announces its connection service right after pairing
+                QTimer::singleShot(2000, this, &MirrorPhonePlugin::connectAdb);
+            } else {
+                setPairing(QStringLiteral("failed"), i18n("Pairing failed. Start pairing again on the phone.\n%1", output.trimmed()));
+            }
+        },
+        30000);
 }
 
 // ---------------------------------------------------------------- scrcpy

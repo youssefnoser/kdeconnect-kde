@@ -8,6 +8,7 @@ import QtQuick
 import QtQuick.Controls as QQC2
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
+import org.kde.prison as Prison
 import org.kde.kdeconnect
 import org.kde.kdeconnect.private.mirrorphone
 
@@ -20,7 +21,9 @@ Kirigami.ScrollablePage {
     readonly property var tools: status.tools || {}
     readonly property var connection: status.connection || {}
     readonly property var phone: status.phone || {}
+    readonly property var pairing: status.pairing || {}
     readonly property bool busy: status.busy || false
+    property bool enteringCode: false
 
     Component.onCompleted: mirrorPhone.refresh()
 
@@ -156,6 +159,107 @@ Kirigami.ScrollablePage {
                 : i18n("Allowed automatically the first time this computer connects over adb, by USB or Wireless debugging")
             wrapMode: Text.Wrap
             Layout.maximumWidth: Kirigami.Units.gridUnit * 22
+        }
+
+        // ------------------------------------------------ pairing
+        Kirigami.Separator {
+            Kirigami.FormData.isSection: true
+            Kirigami.FormData.label: i18n("Wireless Debugging Pairing")
+        }
+
+        QQC2.Label {
+            text: i18n("Needed once for each computer to use Wireless debugging. A USB cable needs no pairing, only \"Allow\" on the device.")
+            wrapMode: Text.Wrap
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 22
+        }
+
+        RowLayout {
+            visible: root.pairing.state !== "scan" && root.pairing.state !== "pairing" && root.pairing.state !== "code"
+            QQC2.Button {
+                text: i18n("Pair with QR Code")
+                icon.name: "view-barcode-qr"
+                enabled: !!root.tools.adb
+                onClicked: {
+                    root.enteringCode = false;
+                    mirrorPhone.startQrPairing();
+                }
+            }
+            QQC2.Button {
+                text: i18n("Pair with Pairing Code")
+                icon.name: "dialog-password"
+                enabled: !!root.tools.adb
+                onClicked: root.enteringCode = true
+            }
+        }
+
+        // The phone may scan from the dark theme's background too, so the code gets its own light one
+        Rectangle {
+            visible: root.pairing.state === "scan" && !!root.pairing.qr
+            color: "white"
+            implicitWidth: Kirigami.Units.gridUnit * 12
+            implicitHeight: implicitWidth
+            Prison.Barcode {
+                anchors.fill: parent
+                anchors.margins: Kirigami.Units.largeSpacing
+                barcodeType: Prison.Barcode.QRCode
+                content: root.pairing.qr || ""
+                foregroundColor: "black"
+                backgroundColor: "white"
+            }
+        }
+
+        RowLayout {
+            visible: root.enteringCode && root.pairing.state !== "pairing" && root.pairing.state !== "code"
+            QQC2.TextField {
+                id: codeField
+                placeholderText: i18n("Six-digit code")
+                inputMethodHints: Qt.ImhDigitsOnly
+                validator: RegularExpressionValidator {
+                    regularExpression: /\d{0,6}/
+                }
+                onAccepted: pairButton.clicked()
+            }
+            QQC2.Button {
+                id: pairButton
+                text: i18n("Pair")
+                enabled: codeField.text.length === 6
+                onClicked: mirrorPhone.pairWithCode(codeField.text)
+            }
+        }
+
+        QQC2.Label {
+            visible: root.enteringCode && !root.pairing.message
+            text: i18n("On the device, open Developer options -> Wireless debugging -> Pair device with pairing code, then enter the code shown there.")
+            wrapMode: Text.Wrap
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 22
+        }
+
+        RowLayout {
+            visible: !!root.pairing.message
+            QQC2.BusyIndicator {
+                visible: root.pairing.state === "scan" || root.pairing.state === "code" || root.pairing.state === "pairing"
+                running: visible
+                Layout.preferredHeight: Kirigami.Units.iconSizes.small
+                Layout.preferredWidth: Kirigami.Units.iconSizes.small
+            }
+            QQC2.Label {
+                text: root.pairing.message || ""
+                color: root.pairing.state === "failed" ? Kirigami.Theme.negativeTextColor
+                     : root.pairing.state === "paired" ? Kirigami.Theme.positiveTextColor
+                     : Kirigami.Theme.textColor
+                wrapMode: Text.Wrap
+                Layout.maximumWidth: Kirigami.Units.gridUnit * 22
+            }
+        }
+
+        QQC2.Button {
+            visible: root.pairing.state === "scan" || root.pairing.state === "code"
+            text: i18n("Cancel")
+            icon.name: "dialog-cancel"
+            onClicked: {
+                root.enteringCode = false;
+                mirrorPhone.cancelPairing();
+            }
         }
 
         // ------------------------------------------------ options
