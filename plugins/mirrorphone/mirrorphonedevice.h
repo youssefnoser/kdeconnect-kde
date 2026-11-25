@@ -7,6 +7,7 @@
 #pragma once
 
 #include <QObject>
+#include <QVariantList>
 #include <QVariantMap>
 #include <QtQml/qqmlregistration.h>
 
@@ -33,13 +34,17 @@ public:
     Q_INVOKABLE void pairWithCode(const QString &code);
     Q_INVOKABLE void cancelPairing();
     Q_INVOKABLE void mirror();
+    Q_INVOKABLE void openApp(const QString &package, const QString &name);
+    Q_INVOKABLE void requestApps();
 
 Q_SIGNALS:
     void deviceIdChanged();
     void statusChanged();
+    void appsReceived(const QVariantList &apps, const QString &error);
 
 private Q_SLOTS:
     void onStatusChanged(const QString &status);
+    void onAppsReceived(const QString &apps, const QString &error);
 
 private:
     QString path() const;

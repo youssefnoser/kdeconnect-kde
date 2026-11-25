@@ -6,7 +6,7 @@
                 "Name": "KDE Connect contributors"
             }
         ],
-        "Description": "Show the phone's screen in a window on this computer",
+        "Description": "Show the phone's screen, or one of its apps, in a window on this computer",
         "EnabledByDefault": true,
         "Icon": "smartphone",
         "License": "GPL",

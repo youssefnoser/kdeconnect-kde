@@ -14,6 +14,7 @@
 
 #include <QDir>
 #include <QHostAddress>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QProcess>
 #include <QProcessEnvironment>
@@ -55,6 +56,12 @@ MirrorPhonePlugin::~MirrorPhonePlugin()
             process->waitForFinished(1000);
         }
     }
+}
+
+static bool isPackageName(const QString &package)
+{
+    static const QRegularExpression pattern(QRegularExpression::anchoredPattern(QStringLiteral("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+")));
+    return package.size() <= 255 && pattern.match(package).hasMatch();
 }
 
 // Serials are "<mDNS name>._adb-tls-connect._tcp" or "<address>:<port>" over Wi-Fi, and the phone's hardware serial over USB
@@ -102,6 +109,10 @@ void MirrorPhonePlugin::receivePacket(const NetworkPacket &np)
         const QString action = np.get<QString>(QStringLiteral("action"));
         if (action == QLatin1String("mirror")) {
             mirrorScreen(Origin::Phone);
+        } else if (action == QLatin1String("openApp")) {
+            openApp(np.get<QString>(QStringLiteral("package")),
+                    np.get<QString>(QStringLiteral("label")),
+                    Origin::Phone);
         } else if (action == QLatin1String("status")) {
             m_phoneWantsStatus = true;
             sendStatusToPhone();
@@ -135,6 +146,11 @@ void MirrorPhonePlugin::mirrorScreen()
     mirrorScreen(Origin::Desktop);
 }
 
+void MirrorPhonePlugin::openApp(const QString &package, const QString &label)
+{
+    openApp(package, label, Origin::Desktop);
+}
+
 void MirrorPhonePlugin::mirrorScreen(Origin origin)
 {
     withAdb([this, origin](const QString &serial, const QString &error) {
@@ -143,6 +159,81 @@ void MirrorPhonePlugin::mirrorScreen(Origin origin)
             return;
         }
         startWindow(QStringLiteral("mirror"), QStringLiteral("screen"), device()->name(), {}, serial, origin);
+    });
+}
+
+void MirrorPhonePlugin::openApp(const QString &package, const QString &label, Origin origin)
+{
+    if (!isPackageName(package)) {
+        qCWarning(KDECONNECT_PLUGIN_MIRRORPHONE) << "Rejected an invalid package name from" << device()->name();
+        reply(QStringLiteral("openApp"), i18n("\"%1\" is not an app package name.", package), origin);
+        return;
+    }
+    const QString name = label.isEmpty() ? package : label.left(100);
+    withAdb([this, package, name, origin](const QString &serial, const QString &error) {
+        if (!error.isEmpty()) {
+            reply(QStringLiteral("openApp"), error, origin);
+            return;
+        }
+        // A virtual display of the phone's size, so that the phone's own screen stays free, without status and navigation
+        // bars, as it shows just the app
+        startWindow(QStringLiteral("openApp"),
+                    package,
+                    i18nc("@title:window app name, phone name", "%1 - %2", name, device()->name()),
+                    {QStringLiteral("--new-display"), QStringLiteral("--no-vd-system-decorations"), QStringLiteral("--start-app=") + package},
+                    serial,
+                    origin);
+    });
+}
+
+void MirrorPhonePlugin::requestApps()
+{
+    if (m_appsRequest) {
+        return;
+    }
+    withAdb([this](const QString &serial, const QString &error) {
+        if (!error.isEmpty()) {
+            Q_EMIT appsReceived(QString(), error);
+            return;
+        } else if (m_appsRequest) {
+            return;
+        }
+        m_appsRequest = newScrcpyProcess();
+        connect(m_appsRequest, &QProcess::finished, this, [this] {
+            // " * <name> <package>" for system apps, " - <name> <package>" for the others
+            static const QRegularExpression appLine(QStringLiteral("^ [*-] (.*\\S)\\s+(\\S+)$"));
+            const QStringList lines = QString::fromUtf8(m_appsRequest->readAllStandardOutput()).split(QLatin1Char('\n'));
+            m_appsRequest->deleteLater();
+            m_appsRequest = nullptr;
+            QList<std::pair<QString, QString>> found;
+            for (const QString &line : lines) {
+                const QRegularExpressionMatch match = appLine.match(line);
+                if (match.hasMatch() && isPackageName(match.captured(2))) {
+                    found.append({match.captured(1), match.captured(2)});
+                }
+            }
+            if (found.isEmpty()) {
+                Q_EMIT appsReceived(QString(), i18n("Could not read the apps on %1.", device()->name()));
+                return;
+            }
+            std::sort(found.begin(), found.end(), [](const auto &a, const auto &b) {
+                return a.first.compare(b.first, Qt::CaseInsensitive) < 0;
+            });
+            QJsonArray apps;
+            for (const auto &[name, package] : std::as_const(found)) {
+                apps.append(QJsonObject{{QStringLiteral("name"), name}, {QStringLiteral("package"), package}});
+            }
+            Q_EMIT appsReceived(QString::fromUtf8(QJsonDocument(apps).toJson(QJsonDocument::Compact)), QString());
+        });
+        connect(m_appsRequest, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
+            if (error == QProcess::FailedToStart) {
+                m_appsRequest->deleteLater();
+                m_appsRequest = nullptr;
+                Q_EMIT appsReceived(QString(), i18n("Could not start scrcpy."));
+            }
+        });
+        m_appsRequest->start(tool(QStringLiteral("scrcpy")), {QStringLiteral("--serial=") + serial, QStringLiteral("--list-apps")});
+        QTimer::singleShot(30000, m_appsRequest, &QProcess::kill);
     });
 }
 

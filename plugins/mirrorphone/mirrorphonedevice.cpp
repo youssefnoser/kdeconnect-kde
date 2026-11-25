@@ -10,6 +10,7 @@
 #include <QDBusMessage>
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 
@@ -70,8 +71,10 @@ void MirrorPhoneDevice::connectSignals(bool connect)
     QDBusConnection bus = QDBusConnection::sessionBus();
     if (connect) {
         bus.connect(SERVICE, path(), INTERFACE, QStringLiteral("statusChanged"), this, SLOT(onStatusChanged(QString)));
+        bus.connect(SERVICE, path(), INTERFACE, QStringLiteral("appsReceived"), this, SLOT(onAppsReceived(QString, QString)));
     } else {
         bus.disconnect(SERVICE, path(), INTERFACE, QStringLiteral("statusChanged"), this, SLOT(onStatusChanged(QString)));
+        bus.disconnect(SERVICE, path(), INTERFACE, QStringLiteral("appsReceived"), this, SLOT(onAppsReceived(QString, QString)));
     }
 }
 
@@ -89,6 +92,11 @@ void MirrorPhoneDevice::onStatusChanged(const QString &status)
 {
     m_status = QJsonDocument::fromJson(status.toUtf8()).object().toVariantMap();
     Q_EMIT statusChanged();
+}
+
+void MirrorPhoneDevice::onAppsReceived(const QString &apps, const QString &error)
+{
+    Q_EMIT appsReceived(QJsonDocument::fromJson(apps.toUtf8()).array().toVariantList(), error);
 }
 
 void MirrorPhoneDevice::refresh()
@@ -130,6 +138,16 @@ void MirrorPhoneDevice::cancelPairing()
 void MirrorPhoneDevice::mirror()
 {
     call(QStringLiteral("mirrorScreen"));
+}
+
+void MirrorPhoneDevice::openApp(const QString &package, const QString &name)
+{
+    call(QStringLiteral("openApp"), {package, name});
+}
+
+void MirrorPhoneDevice::requestApps()
+{
+    call(QStringLiteral("requestApps"));
 }
 
 #include "moc_mirrorphonedevice.cpp"

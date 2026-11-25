@@ -244,6 +244,14 @@ Kirigami.ScrollablePage {
                 device: root.currentDevice
             },
             PluginItem {
+                pluginName: "mirrorphone"
+                name: i18nd("kdeconnect-app", "Open app...")
+                iconNameOverride: "window-new"
+                onClick: () => pageStack.push(Qt.resolvedUrl("MirrorPhoneApps.qml"), { device: root.currentDevice })
+                section: "control"
+                device: root.currentDevice
+            },
+            PluginItem {
                 readonly property QtObject sms: SmsDbusInterfaceFactory.create(root.currentDevice.id())
                 pluginName: "sms"
                 name: i18n("SMS Messages")

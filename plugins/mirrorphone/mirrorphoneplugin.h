@@ -24,7 +24,7 @@ class QProcess;
 #define PACKET_TYPE_MIRRORPHONE_STATUS QStringLiteral("kdeconnect.mirrorphone.status")
 
 /**
- * Shows the phone's screen in a scrcpy window.
+ * Shows the phone's screen, or one app of the phone on a virtual display, in a scrcpy window.
  *
  * scrcpy needs adb. This plugin finds the phone among the adb devices, over USB or Wireless
  * debugging, by the phone's KDE Connect address. The phone reports its developer settings,
@@ -44,6 +44,9 @@ public:
     QString dbusPath() const override;
 
     Q_SCRIPTABLE void mirrorScreen();
+    Q_SCRIPTABLE void openApp(const QString &package, const QString &label);
+    /// Answered by appsReceived()
+    Q_SCRIPTABLE void requestApps();
 
     /// JSON: tools, connection, busy, message, phone and pairing; see statusJson()
     Q_SCRIPTABLE QString status() const;
@@ -60,6 +63,8 @@ public:
     Q_SCRIPTABLE void cancelPairing();
 
 Q_SIGNALS:
+    /// A JSON array of {"name", "package"} sorted by name, or an error
+    Q_SCRIPTABLE void appsReceived(const QString &apps, const QString &error);
     Q_SCRIPTABLE void statusChanged(const QString &status);
 
 private:
@@ -72,6 +77,7 @@ private:
     using SerialCallback = std::function<void(const QString &serial, const QString &serviceAddress)>;
 
     void mirrorScreen(Origin origin);
+    void openApp(const QString &package, const QString &label, Origin origin);
 
     // adb connection
     void withAdb(const AdbCallback &callback);
@@ -133,6 +139,7 @@ private:
     QElapsedTimer m_pairingTimer;
     int m_pairingGeneration = 0;
 
+    QProcess *m_appsRequest = nullptr;
     QHash<QString, QProcess *> m_windows;
     QString m_audioWindow;
 };
