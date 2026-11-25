@@ -35,12 +35,14 @@ public:
     Q_INVOKABLE void cancelPairing();
     Q_INVOKABLE void mirror();
     Q_INVOKABLE void openApp(const QString &package, const QString &name, bool turnScreenOff);
-    Q_INVOKABLE void requestApps();
+    Q_INVOKABLE void requestApps(bool reloadIcons);
 
 Q_SIGNALS:
     void deviceIdChanged();
     void statusChanged();
     void appsReceived(const QVariantList &apps, const QString &error);
+    /// An empty package for the placeholder icon
+    void iconReceived(const QString &package, const QString &url);
 
 private Q_SLOTS:
     void onStatusChanged(const QString &status);

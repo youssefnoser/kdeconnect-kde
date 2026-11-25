@@ -72,9 +72,11 @@ void MirrorPhoneDevice::connectSignals(bool connect)
     if (connect) {
         bus.connect(SERVICE, path(), INTERFACE, QStringLiteral("statusChanged"), this, SLOT(onStatusChanged(QString)));
         bus.connect(SERVICE, path(), INTERFACE, QStringLiteral("appsReceived"), this, SLOT(onAppsReceived(QString, QString)));
+        bus.connect(SERVICE, path(), INTERFACE, QStringLiteral("iconReceived"), this, SIGNAL(iconReceived(QString, QString)));
     } else {
         bus.disconnect(SERVICE, path(), INTERFACE, QStringLiteral("statusChanged"), this, SLOT(onStatusChanged(QString)));
         bus.disconnect(SERVICE, path(), INTERFACE, QStringLiteral("appsReceived"), this, SLOT(onAppsReceived(QString, QString)));
+        bus.disconnect(SERVICE, path(), INTERFACE, QStringLiteral("iconReceived"), this, SIGNAL(iconReceived(QString, QString)));
     }
 }
 
@@ -145,9 +147,9 @@ void MirrorPhoneDevice::openApp(const QString &package, const QString &name, boo
     call(QStringLiteral("openApp"), {package, name, turnScreenOff});
 }
 
-void MirrorPhoneDevice::requestApps()
+void MirrorPhoneDevice::requestApps(bool reloadIcons)
 {
-    call(QStringLiteral("requestApps"));
+    call(QStringLiteral("requestApps"), {reloadIcons});
 }
 
 #include "moc_mirrorphonedevice.cpp"

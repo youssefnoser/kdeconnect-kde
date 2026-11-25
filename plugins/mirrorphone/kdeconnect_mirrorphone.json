@@ -15,11 +15,13 @@
     "X-KdeConnect-OutgoingPacketType": [
         "kdeconnect.mirrorphone.response",
         "kdeconnect.mirrorphone.adb",
-        "kdeconnect.mirrorphone.status"
+        "kdeconnect.mirrorphone.status",
+        "kdeconnect.mirrorphone.icons.request"
     ],
     "X-KdeConnect-SupportedPacketType": [
         "kdeconnect.mirrorphone.request",
         "kdeconnect.mirrorphone.adb.status",
-        "kdeconnect.mirrorphone.lock"
+        "kdeconnect.mirrorphone.lock",
+        "kdeconnect.mirrorphone.icon"
     ]
 }

@@ -13,6 +13,8 @@
 #include <KPluginFactory>
 
 #include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QHostAddress>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -20,8 +22,10 @@
 #include <QProcessEnvironment>
 #include <QRandomGenerator>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QStandardPaths>
 #include <QTimer>
+#include <QUrl>
 
 #include <memory>
 
@@ -134,6 +138,8 @@ void MirrorPhonePlugin::receivePacket(const NetworkPacket &np)
         } else {
             qCWarning(KDECONNECT_PLUGIN_MIRRORPHONE) << "Unknown action" << action;
         }
+    } else if (np.type() == PACKET_TYPE_MIRRORPHONE_ICON) {
+        receiveIcon(np);
     } else if (np.type() == PACKET_TYPE_MIRRORPHONE_LOCK) {
         lockChanged(np.get<bool>(QStringLiteral("locked")), np.get<bool>(QStringLiteral("screenOn")));
     } else if (np.type() == PACKET_TYPE_MIRRORPHONE_ADB_STATUS) {
@@ -224,12 +230,12 @@ void MirrorPhonePlugin::openApp(const QString &package, const QString &label, bo
     });
 }
 
-void MirrorPhonePlugin::requestApps()
+void MirrorPhonePlugin::requestApps(bool reloadIcons)
 {
     if (m_appsRequest) {
         return;
     }
-    withAdb([this](const QString &serial, const QString &error) {
+    withAdb([this, reloadIcons](const QString &serial, const QString &error) {
         if (!error.isEmpty()) {
             Q_EMIT appsReceived(QString(), error);
             return;
@@ -237,7 +243,7 @@ void MirrorPhonePlugin::requestApps()
             return;
         }
         m_appsRequest = newScrcpyProcess();
-        connect(m_appsRequest, &QProcess::finished, this, [this] {
+        connect(m_appsRequest, &QProcess::finished, this, [this, reloadIcons] {
             // " * <name> <package>" for system apps, " - <name> <package>" for the others
             static const QRegularExpression appLine(QStringLiteral("^ [*-] (.*\\S)\\s+(\\S+)$"));
             const QStringList lines = QString::fromUtf8(m_appsRequest->readAllStandardOutput()).split(QLatin1Char('\n'));
@@ -257,11 +263,18 @@ void MirrorPhonePlugin::requestApps()
             std::sort(found.begin(), found.end(), [](const auto &a, const auto &b) {
                 return a.first.compare(b.first, Qt::CaseInsensitive) < 0;
             });
+            if (QFile::exists(iconPath(QString()))) {
+                Q_EMIT iconReceived(QString(), QUrl::fromLocalFile(iconPath(QString())).toString());
+            }
             QJsonArray apps;
+            QStringList packages;
             for (const auto &[name, package] : std::as_const(found)) {
-                apps.append(QJsonObject{{QStringLiteral("name"), name}, {QStringLiteral("package"), package}});
+                const QString icon = QFile::exists(iconPath(package)) ? QUrl::fromLocalFile(iconPath(package)).toString() : QString();
+                apps.append(QJsonObject{{QStringLiteral("name"), name}, {QStringLiteral("package"), package}, {QStringLiteral("icon"), icon}});
+                packages.append(package);
             }
             Q_EMIT appsReceived(QString::fromUtf8(QJsonDocument(apps).toJson(QJsonDocument::Compact)), QString());
+            requestIcons(packages, reloadIcons);
         });
         connect(m_appsRequest, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
             if (error == QProcess::FailedToStart) {
@@ -944,6 +957,55 @@ void MirrorPhonePlugin::setScreenPower(const QString &serial, bool on)
             runShell(serial, command(QStringLiteral("power-on")));
         }
     });
+}
+
+// ---------------------------------------------------------------- app icons
+
+QString MirrorPhonePlugin::iconPath(const QString &package) const
+{
+    // "placeholder" has no dot, so no package has that name
+    const QString name = package.isEmpty() ? QStringLiteral("placeholder") : package;
+    return QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/mirrorphone/") + device()->id() + QLatin1Char('/') + name
+        + QStringLiteral(".png");
+}
+
+void MirrorPhonePlugin::requestIcons(const QStringList &packages, bool reload)
+{
+    QStringList missing;
+    for (const QString &package : packages) {
+        if (reload || !QFile::exists(iconPath(package))) {
+            missing.append(package);
+        }
+    }
+    const bool placeholder = reload || !QFile::exists(iconPath(QString()));
+    if (missing.isEmpty() && !placeholder) {
+        return;
+    }
+    // In the order of the list, so that icons fill it from the top
+    NetworkPacket np(PACKET_TYPE_MIRRORPHONE_ICONS_REQUEST, {{QStringLiteral("packages"), missing}, {QStringLiteral("placeholder"), placeholder}});
+    sendPacket(np);
+}
+
+void MirrorPhonePlugin::receiveIcon(const NetworkPacket &np)
+{
+    const bool placeholder = np.get<bool>(QStringLiteral("placeholder"), false);
+    const QString package = placeholder ? QString() : np.get<QString>(QStringLiteral("package"));
+    // The package names a file
+    if (!placeholder && !isPackageName(package)) {
+        qCWarning(KDECONNECT_PLUGIN_MIRRORPHONE) << "Rejected an icon with an invalid package name from" << device()->name();
+        return;
+    }
+    const QByteArray png = QByteArray::fromBase64(np.get<QString>(QStringLiteral("icon")).toLatin1());
+    if (!png.startsWith("\x89PNG") || png.size() > 1024 * 1024) {
+        qCWarning(KDECONNECT_PLUGIN_MIRRORPHONE) << "Rejected an icon that is not a small PNG, for" << package;
+        return;
+    }
+    const QString path = iconPath(package);
+    QDir().mkpath(QFileInfo(path).path());
+    QSaveFile file(path);
+    if (file.open(QIODevice::WriteOnly) && file.write(png) == png.size() && file.commit()) {
+        Q_EMIT iconReceived(package, QUrl::fromLocalFile(path).toString());
+    }
 }
 
 // ----------------------------------------------------------------

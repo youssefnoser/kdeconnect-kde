@@ -23,6 +23,8 @@ class QProcess;
 #define PACKET_TYPE_MIRRORPHONE_ADB_STATUS QStringLiteral("kdeconnect.mirrorphone.adb.status")
 #define PACKET_TYPE_MIRRORPHONE_STATUS QStringLiteral("kdeconnect.mirrorphone.status")
 #define PACKET_TYPE_MIRRORPHONE_LOCK QStringLiteral("kdeconnect.mirrorphone.lock")
+#define PACKET_TYPE_MIRRORPHONE_ICONS_REQUEST QStringLiteral("kdeconnect.mirrorphone.icons.request")
+#define PACKET_TYPE_MIRRORPHONE_ICON QStringLiteral("kdeconnect.mirrorphone.icon")
 
 /**
  * Shows the phone's screen, or one app of the phone on a virtual display, in a scrcpy window.
@@ -47,8 +49,8 @@ public:
     Q_SCRIPTABLE void mirrorScreen();
     /// turnScreenOff: the phone's own screen goes dark while the app's window is open; Android 15 and later
     Q_SCRIPTABLE void openApp(const QString &package, const QString &label, bool turnScreenOff);
-    /// Answered by appsReceived()
-    Q_SCRIPTABLE void requestApps();
+    /// Answered by appsReceived(), then iconReceived() for each icon that was not cached, or for all with reloadIcons
+    Q_SCRIPTABLE void requestApps(bool reloadIcons);
 
     /// JSON: tools, connection, busy, message, phone and pairing; see statusJson()
     Q_SCRIPTABLE QString status() const;
@@ -67,6 +69,8 @@ public:
 Q_SIGNALS:
     /// A JSON array of {"name", "package"} sorted by name, or an error
     Q_SCRIPTABLE void appsReceived(const QString &apps, const QString &error);
+    /// The URL of a cached icon PNG; an empty package for the placeholder, Android's stock app icon
+    Q_SCRIPTABLE void iconReceived(const QString &package, const QString &url);
     Q_SCRIPTABLE void statusChanged(const QString &status);
 
 private:
@@ -113,6 +117,11 @@ private:
     void lockChanged(bool locked, bool screenOn);
     void showUnlockPrompt(const QString &key, const QString &serial);
     void whenAppStarted(const QString &key, const std::function<void(int display)> &callback);
+
+    // App icons, which the phone sends one by one, cached for each phone
+    QString iconPath(const QString &package) const;
+    void requestIcons(const QStringList &packages, bool reload);
+    void receiveIcon(const NetworkPacket &np);
 
     void reply(const QString &action, const QString &error, Origin origin);
     void notifySetup(const QString &text);

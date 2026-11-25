@@ -15,6 +15,10 @@ Kirigami.ScrollablePage {
     id: root
     property QtObject device
     property var apps: []
+    // package -> URL of its cached icon; the phone sends missing icons one by one, after the list
+    property var icons: ({})
+    // Android's stock app icon, for apps whose icon has not arrived yet
+    property string placeholderIcon
     property bool loading: true
     property string error: ""
     title: i18nd("kdeconnect-app", "Open app")
@@ -48,25 +52,41 @@ Kirigami.ScrollablePage {
             icon.name: "view-refresh"
             text: i18nd("kdeconnect-app", "Refresh")
             enabled: !root.loading
-            onTriggered: root.refresh()
+            onTriggered: root.refresh(true)
         }
     ]
 
-    function refresh() {
+    function refresh(reloadIcons) {
         loading = true;
         error = "";
-        mirrorPhone.requestApps();
+        mirrorPhone.requestApps(reloadIcons);
     }
 
-    Component.onCompleted: refresh()
+    Component.onCompleted: refresh(false)
 
     MirrorPhoneDevice {
         id: mirrorPhone
         deviceId: root.device.id()
         onAppsReceived: (apps, error) => {
+            const icons = {};
+            for (const app of apps) {
+                if (app.icon) {
+                    icons[app.package] = app.icon;
+                }
+            }
             root.loading = false;
             root.error = error;
+            root.icons = icons;
             root.apps = apps;
+        }
+        onIconReceived: (pkg, url) => {
+            // A new URL, as a fresh icon keeps the cached icon's file name
+            const fresh = url + "?" + Date.now();
+            if (pkg === "") {
+                root.placeholderIcon = fresh;
+            } else {
+                root.icons = Object.assign({}, root.icons, {[pkg]: fresh});
+            }
         }
     }
 
@@ -79,19 +99,33 @@ Kirigami.ScrollablePage {
         delegate: QQC2.ItemDelegate {
             required property var modelData
             width: ListView.view.width
-            contentItem: ColumnLayout {
-                spacing: 0
-                QQC2.Label {
-                    text: modelData.name
-                    elide: Text.ElideRight
-                    Layout.fillWidth: true
+            contentItem: RowLayout {
+                spacing: Kirigami.Units.largeSpacing
+                Image {
+                    source: root.icons[modelData.package] || root.placeholderIcon
+                    sourceSize.width: Kirigami.Units.iconSizes.medium
+                    sourceSize.height: Kirigami.Units.iconSizes.medium
+                    Layout.preferredWidth: Kirigami.Units.iconSizes.medium
+                    Layout.preferredHeight: Kirigami.Units.iconSizes.medium
+                    fillMode: Image.PreserveAspectFit
+                    asynchronous: true
+                    cache: false
                 }
-                QQC2.Label {
-                    text: modelData.package
-                    opacity: 0.7
-                    font: Kirigami.Theme.smallFont
-                    elide: Text.ElideRight
+                ColumnLayout {
+                    spacing: 0
                     Layout.fillWidth: true
+                    QQC2.Label {
+                        text: modelData.name
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                    QQC2.Label {
+                        text: modelData.package
+                        opacity: 0.7
+                        font: Kirigami.Theme.smallFont
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
                 }
             }
             onClicked: {
