@@ -34,7 +34,7 @@ public:
     Q_INVOKABLE void pairWithCode(const QString &code);
     Q_INVOKABLE void cancelPairing();
     Q_INVOKABLE void mirror();
-    Q_INVOKABLE void openApp(const QString &package, const QString &name);
+    Q_INVOKABLE void openApp(const QString &package, const QString &name, bool turnScreenOff);
     Q_INVOKABLE void requestApps();
 
 Q_SIGNALS:

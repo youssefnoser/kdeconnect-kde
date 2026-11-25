@@ -21,10 +21,26 @@ Kirigami.ScrollablePage {
 
     header: QQC2.Control {
         padding: Kirigami.Units.largeSpacing
-        contentItem: Kirigami.SearchField {
-            id: search
-            focus: true
+        contentItem: ColumnLayout {
+            Kirigami.SearchField {
+                id: search
+                focus: true
+                Layout.fillWidth: true
+            }
+            // The app runs on a display of its own, so the device's screen is not needed
+            QQC2.CheckBox {
+                id: screenOff
+                text: i18nd("kdeconnect-app", "Turn the device's screen off")
+                checked: config.getBool("appScreenOff", false)
+                onToggled: config.set("appScreenOff", checked)
+            }
         }
+    }
+
+    KdeConnectPluginConfig {
+        id: config
+        deviceId: root.device.id()
+        pluginName: "kdeconnect_mirrorphone"
     }
 
     actions: [
@@ -79,7 +95,7 @@ Kirigami.ScrollablePage {
                 }
             }
             onClicked: {
-                mirrorPhone.openApp(modelData.package, modelData.name);
+                mirrorPhone.openApp(modelData.package, modelData.name, screenOff.checked);
                 showPassiveNotification(i18nd("kdeconnect-app", "Opening %1...", modelData.name));
             }
         }

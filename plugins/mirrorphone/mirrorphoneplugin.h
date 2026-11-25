@@ -45,7 +45,8 @@ public:
     QString dbusPath() const override;
 
     Q_SCRIPTABLE void mirrorScreen();
-    Q_SCRIPTABLE void openApp(const QString &package, const QString &label);
+    /// turnScreenOff: the phone's own screen goes dark while the app's window is open; Android 15 and later
+    Q_SCRIPTABLE void openApp(const QString &package, const QString &label, bool turnScreenOff);
     /// Answered by appsReceived()
     Q_SCRIPTABLE void requestApps();
 
@@ -78,7 +79,7 @@ private:
     using SerialCallback = std::function<void(const QString &serial, const QString &serviceAddress)>;
 
     void mirrorScreen(Origin origin);
-    void openApp(const QString &package, const QString &label, Origin origin);
+    void openApp(const QString &package, const QString &label, bool turnScreenOff, Origin origin);
 
     // adb connection
     void withAdb(const AdbCallback &callback);
@@ -103,8 +104,11 @@ private:
                      const QString &key,
                      const QString &title,
                      const QStringList &arguments,
+                     bool turnScreenOff,
                      const QString &serial,
                      Origin origin);
+    void setScreenPower(const QString &serial, bool on);
+    void keepScreenOff(const QString &key, const QString &serial);
     void isLocked(const QString &serial, const std::function<void(bool locked)> &callback);
     void lockChanged(bool locked, bool screenOn);
     void showUnlockPrompt(const QString &key, const QString &serial);
@@ -150,4 +154,7 @@ private:
     QHash<QString, int> m_windowDisplays;
     QHash<QString, std::function<void(int display)>> m_displayWaiters;
     QString m_audioWindow;
+    // The windows that keep the phone's screen off, and the phone they turned it off on
+    QSet<QString> m_screenOffWindows;
+    QString m_screenOffSerial;
 };

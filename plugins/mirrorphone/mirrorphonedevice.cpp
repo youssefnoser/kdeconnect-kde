@@ -140,9 +140,9 @@ void MirrorPhoneDevice::mirror()
     call(QStringLiteral("mirrorScreen"));
 }
 
-void MirrorPhoneDevice::openApp(const QString &package, const QString &name)
+void MirrorPhoneDevice::openApp(const QString &package, const QString &name, bool turnScreenOff)
 {
-    call(QStringLiteral("openApp"), {package, name});
+    call(QStringLiteral("openApp"), {package, name, turnScreenOff});
 }
 
 void MirrorPhoneDevice::requestApps()

@@ -58,6 +58,17 @@ MirrorPhonePlugin::~MirrorPhonePlugin()
             process->waitForFinished(1000);
         }
     }
+    // Their finished() handlers no longer run, so turn the phone's screen back on here
+    if (!m_screenOffWindows.isEmpty()) {
+        for (const QString &command : {QStringLiteral("power-reset"), QStringLiteral("power-on")}) {
+            QProcess adb;
+            adb.setProcessChannelMode(QProcess::MergedChannels);
+            adb.start(tool(QStringLiteral("adb")), {QStringLiteral("-s"), m_screenOffSerial, QStringLiteral("shell"), QStringLiteral("cmd"), QStringLiteral("display"), command, QStringLiteral("0")});
+            if (!adb.waitForFinished(3000) || !adb.readAll().contains("Unknown command")) {
+                break;
+            }
+        }
+    }
 }
 
 static bool isPackageName(const QString &package)
@@ -114,6 +125,7 @@ void MirrorPhonePlugin::receivePacket(const NetworkPacket &np)
         } else if (action == QLatin1String("openApp")) {
             openApp(np.get<QString>(QStringLiteral("package")),
                     np.get<QString>(QStringLiteral("label")),
+                    np.get<bool>(QStringLiteral("turnScreenOff"), false),
                     Origin::Phone);
         } else if (action == QLatin1String("status")) {
             m_phoneWantsStatus = true;
@@ -150,9 +162,9 @@ void MirrorPhonePlugin::mirrorScreen()
     mirrorScreen(Origin::Desktop);
 }
 
-void MirrorPhonePlugin::openApp(const QString &package, const QString &label)
+void MirrorPhonePlugin::openApp(const QString &package, const QString &label, bool turnScreenOff)
 {
-    openApp(package, label, Origin::Desktop);
+    openApp(package, label, turnScreenOff, Origin::Desktop);
 }
 
 void MirrorPhonePlugin::mirrorScreen(Origin origin)
@@ -162,11 +174,16 @@ void MirrorPhonePlugin::mirrorScreen(Origin origin)
             reply(QStringLiteral("mirror"), error, origin);
             return;
         }
-        startWindow(QStringLiteral("mirror"), QStringLiteral("screen"), device()->name(), {}, serial, origin);
+        // A mirror of a dark screen shows nothing
+        if (!m_screenOffWindows.isEmpty()) {
+            m_screenOffWindows.clear();
+            setScreenPower(m_screenOffSerial, true);
+        }
+        startWindow(QStringLiteral("mirror"), QStringLiteral("screen"), device()->name(), {}, false, serial, origin);
     });
 }
 
-void MirrorPhonePlugin::openApp(const QString &package, const QString &label, Origin origin)
+void MirrorPhonePlugin::openApp(const QString &package, const QString &label, bool turnScreenOff, Origin origin)
 {
     if (!isPackageName(package)) {
         qCWarning(KDECONNECT_PLUGIN_MIRRORPHONE) << "Rejected an invalid package name from" << device()->name();
@@ -174,12 +191,12 @@ void MirrorPhonePlugin::openApp(const QString &package, const QString &label, Or
         return;
     }
     const QString name = label.isEmpty() ? package : label.left(100);
-    withAdb([this, package, name, origin](const QString &serial, const QString &error) {
+    withAdb([this, package, name, turnScreenOff, origin](const QString &serial, const QString &error) {
         if (!error.isEmpty()) {
             reply(QStringLiteral("openApp"), error, origin);
             return;
         }
-        isLocked(serial, [this, package, name, serial, origin](bool locked) {
+        isLocked(serial, [this, package, name, turnScreenOff, serial, origin](bool locked) {
             const bool alreadyOpen = m_windows.contains(package);
             // A virtual display of the phone's size, so that the phone's own screen stays free, without status and navigation
             // bars, as it shows just the app
@@ -187,12 +204,17 @@ void MirrorPhonePlugin::openApp(const QString &package, const QString &label, Or
                         package,
                         i18nc("@title:window app name, phone name", "%1 - %2", name, device()->name()),
                         {QStringLiteral("--new-display"), QStringLiteral("--no-vd-system-decorations"), QStringLiteral("--start-app=") + package},
+                        turnScreenOff && !locked,
                         serial,
                         origin);
             if (alreadyOpen || !m_windows.contains(package)) {
                 return;
             }
             if (locked) {
+                // The screen goes off once the phone is unlocked, see lockChanged()
+                if (turnScreenOff) {
+                    m_screenOffWindows.insert(package);
+                }
                 // A sleeping phone keeps the app's display asleep too, which then shows nothing, and scrcpy does not wake
                 // it for a display of its own
                 runShell(serial, {QStringLiteral("input"), QStringLiteral("keyevent"), QStringLiteral("KEYCODE_WAKEUP")});
@@ -740,10 +762,14 @@ void MirrorPhonePlugin::startWindow(const QString &action,
                                     const QString &key,
                                     const QString &title,
                                     const QStringList &arguments,
+                                    bool turnScreenOff,
                                     const QString &serial,
                                     Origin origin)
 {
     if (m_windows.contains(key)) {
+        if (turnScreenOff) {
+            keepScreenOff(key, serial);
+        }
         reply(action, QString(), origin);
         return;
     }
@@ -778,6 +804,9 @@ void MirrorPhonePlugin::startWindow(const QString &action,
         if (m_audioWindow == key) {
             m_audioWindow.clear();
         }
+        if (m_screenOffWindows.remove(key) && m_screenOffWindows.isEmpty() && !m_screenOffSerial.isEmpty()) {
+            setScreenPower(m_screenOffSerial, true);
+        }
         process->deleteLater();
         output->append(process->readAll());
         const QStringList lines = QString::fromUtf8(*output).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
@@ -804,7 +833,10 @@ void MirrorPhonePlugin::startWindow(const QString &action,
             reply(action, i18n("Could not start scrcpy: %1", process->errorString()), origin);
         }
     });
-    connect(process, &QProcess::started, this, [this, action, origin] {
+    connect(process, &QProcess::started, this, [this, action, origin, key, turnScreenOff, serial] {
+        if (turnScreenOff) {
+            keepScreenOff(key, serial);
+        }
         reply(action, QString(), origin);
     });
 
@@ -819,6 +851,14 @@ void MirrorPhonePlugin::startWindow(const QString &action,
     allArguments << QStringLiteral("--window-title=") + title;
     qCDebug(KDECONNECT_PLUGIN_MIRRORPHONE) << "Starting scrcpy" << allArguments;
     process->start(tool(QStringLiteral("scrcpy")), allArguments);
+}
+
+void MirrorPhonePlugin::keepScreenOff(const QString &key, const QString &serial)
+{
+    if (!m_screenOffWindows.contains(key)) {
+        m_screenOffWindows.insert(key);
+        setScreenPower(serial, false);
+    }
 }
 
 void MirrorPhonePlugin::isLocked(const QString &serial, const std::function<void(bool locked)> &callback)
@@ -844,6 +884,9 @@ void MirrorPhonePlugin::lockChanged(bool locked, bool screenOn)
         for (const QString &app : std::as_const(apps)) {
             showUnlockPrompt(app, m_serial);
         }
+    } else if (!m_screenOffWindows.isEmpty()) {
+        // Unlocking turned the screen on
+        setScreenPower(m_serial, false);
     }
 }
 
@@ -873,6 +916,34 @@ void MirrorPhonePlugin::whenAppStarted(const QString &key, const std::function<v
     } else if (m_windows.contains(key)) {
         m_displayWaiters.insert(key, callback);
     }
+}
+
+void MirrorPhonePlugin::setScreenPower(const QString &serial, bool on)
+{
+    // Unlike scrcpy's --turn-screen-off, which locks some phones and freezes their launcher, this turns the panel off
+    // without the phone noticing, so apps on scrcpy's virtual displays stay usable. Android 15 and later
+    const auto command = [serial](const QString &name) {
+        return QStringList{QStringLiteral("cmd"), QStringLiteral("display"), name, QStringLiteral("0")};
+    };
+    if (!on) {
+        m_screenOffSerial = serial;
+        runShell(serial, command(QStringLiteral("power-off")), [this](int exitCode, const QString &output) {
+            if (exitCode != 0 || output.contains(QLatin1String("Unknown command"))) {
+                qCWarning(KDECONNECT_PLUGIN_MIRRORPHONE) << "Could not turn the screen off:" << exitCode << output.trimmed();
+                Daemon::instance()->sendSimpleNotification(QStringLiteral("error"),
+                                                           device()->name(),
+                                                           i18n("Could not turn the screen of %1 off. This needs Android 15 or later.", device()->name()),
+                                                           QStringLiteral("dialog-error"));
+            }
+        });
+        return;
+    }
+    // "power-reset" returns the screen to the state it should have; Android 15 calls it "power-on"
+    runShell(serial, command(QStringLiteral("power-reset")), [this, serial, command](int, const QString &output) {
+        if (output.contains(QLatin1String("Unknown command"))) {
+            runShell(serial, command(QStringLiteral("power-on")));
+        }
+    });
 }
 
 // ----------------------------------------------------------------
