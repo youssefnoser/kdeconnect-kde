@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Youssef Noser <youssefnoser1i@gmail.com>
+# SPDX-License-Identifier: BSD-2-Clause
+
 # QML helper for the settings page and the app's device page
 
 ecm_add_qml_module(kdeconnect_mirrorphone_qmlhelper

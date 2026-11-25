@@ -1,5 +1,5 @@
 /**
- * SPDX-FileCopyrightText: 2026 KDE Connect contributors
+ * SPDX-FileCopyrightText: 2026 Youssef Noser <youssefnoser1i@gmail.com>
  * Device matching, pairing and scrcpy handling adapted from Phone Kompanion,
  * SPDX-FileCopyrightText: 2026 Rok Krajnc <rok.krajnc@gmail.com>
  *

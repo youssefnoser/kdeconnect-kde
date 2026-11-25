@@ -3,7 +3,8 @@
     "KPlugin": {
         "Authors": [
             {
-                "Name": "KDE Connect contributors"
+                "Email": "youssefnoser1i@gmail.com",
+                "Name": "Youssef Noser"
             }
         ],
         "Description": "Show the phone's screen, or one of its apps, in a window on this computer",
