@@ -22,19 +22,23 @@ git_src() {
     git -c "safe.directory=${SRC_DIR}" -C "$SRC_DIR" "$@" 2>/dev/null
 }
 
-# Tag builds must match CMakeLists.txt; everything else is a snapshot.
+# Release tags are v<CMakeLists.txt version>-mirrorphone.<N>; N becomes the
+# package release. Everything else is a snapshot.
 if [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
     TAG="${GITHUB_REF#refs/tags/}"
-    if [[ "$TAG" != "v${VERSION}" ]]; then
-        echo "Tag ${TAG} does not match CMakeLists.txt version v${VERSION}" >&2
+    TAG_RE="^v${VERSION//./\\.}-mirrorphone\\.([0-9]+)$"
+    if [[ ! "$TAG" =~ $TAG_RE ]]; then
+        echo "Tag ${TAG} should be v${VERSION}-mirrorphone.<N>" >&2
         exit 1
     fi
     PKGVER="$VERSION"
-    RPM_RELEASE="1"
+    PKGREL="${BASH_REMATCH[1]}"
+    RPM_RELEASE="$PKGREL"
 else
     COUNT="${COMMIT_COUNT:-$(git_src rev-list --count HEAD || echo 0)}"
     SHA="${SHORT_SHA:-$(git_src rev-parse --short=7 HEAD || echo unknown)}"
     PKGVER="${VERSION}.r${COUNT}.g${SHA}"
+    PKGREL="1"
     RPM_RELEASE="0.r${COUNT}.g${SHA}"
 fi
 
@@ -72,7 +76,7 @@ case "$DISTRO" in
         PKG_DIR="${WORK_DIR}/pkgbuild"
         mkdir -p "$PKG_DIR"
         make_tarball "kdeconnect-${PKGVER}" "${PKG_DIR}/kdeconnect-${PKGVER}.tar.gz"
-        sed -e "s|@ARCH_PKGVER@|${PKGVER}|g" -e "s|@ARCH_PKGREL@|1|g" \
+        sed -e "s|@ARCH_PKGVER@|${PKGVER}|g" -e "s|@ARCH_PKGREL@|${PKGREL}|g" \
             "${SCRIPT_DIR}/arch/PKGBUILD.in" > "${PKG_DIR}/PKGBUILD"
 
         # makepkg refuses to run as root

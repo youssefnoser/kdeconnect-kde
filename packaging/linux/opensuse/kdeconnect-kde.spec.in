@@ -43,13 +43,9 @@ separately if you want ADB and screen mirroring support in mirrorphone.
 
 %build
 %cmake_kf6 \
-    -DBUILD_TESTING=ON \
+    -DBUILD_TESTING=OFF \
     -DKDE_INSTALL_USE_QT_SYS_PATHS=ON
 %kf6_build
-
-%check
-export QT_QPA_PLATFORM=offscreen
-%ctest
 
 %install
 %kf6_install

@@ -2,35 +2,14 @@ name: Linux Packages
 
 on:
   push:
-    branches:
-      - master
-      - openapp
     tags:
-      - 'v*'
-  pull_request:
-  workflow_dispatch:
+      - 'v*-mirrorphone.*'
 
 permissions:
   contents: read
 
 jobs:
-  prepare:
-    runs-on: ubuntu-latest
-    outputs:
-      commit_count: ${{ steps.meta.outputs.commit_count }}
-      short_sha: ${{ steps.meta.outputs.short_sha }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - id: meta
-        run: |
-          echo "commit_count=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
-          echo "short_sha=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
-
   build:
-    needs: prepare
     runs-on: ubuntu-latest
     container: ${{ matrix.container }}
     strategy:
@@ -53,9 +32,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build ${{ matrix.name }} package
-        env:
-          COMMIT_COUNT: ${{ needs.prepare.outputs.commit_count }}
-          SHORT_SHA: ${{ needs.prepare.outputs.short_sha }}
         run: bash packaging/linux/build.sh ${{ matrix.distro }} . dist
 
       - uses: actions/upload-artifact@v4
@@ -66,7 +42,6 @@ jobs:
 
   release:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write

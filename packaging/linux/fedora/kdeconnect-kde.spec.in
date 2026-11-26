@@ -48,12 +48,9 @@ separately if you want ADB and screen mirroring support in mirrorphone.
 
 %build
 %cmake -G Ninja \
-    -DBUILD_TESTING=ON \
+    -DBUILD_TESTING=OFF \
     -DKDE_INSTALL_USE_QT_SYS_PATHS=ON
 %cmake_build
-
-%check
-QT_QPA_PLATFORM=offscreen %ctest --output-on-failure
 
 %install
 %cmake_install

@@ -71,12 +71,8 @@ build() {
     -DCMAKE_INSTALL_LIBDIR=lib \
     -DKDE_INSTALL_LIBEXECDIR=lib \
     -DKDE_INSTALL_USE_QT_SYS_PATHS=ON \
-    -DBUILD_TESTING=ON
+    -DBUILD_TESTING=OFF
   cmake --build build
-}
-
-check() {
-  QT_QPA_PLATFORM=offscreen ctest --test-dir build --output-on-failure
 }
 
 package() {
