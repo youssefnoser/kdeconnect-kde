@@ -1,3 +1,30 @@
+# About this fork
+This is a fork of KDE Connect that can also show your phone's screen (or a single app from it) in a window on your computer. Everything else is the same as upstream.
+
+## How to install this fork
+Grab the package for your distro from the [releases page](https://github.com/youssefnoser/kdeconnect-kde/releases) and install it:
+
+- Arch Linux: `sudo pacman -U kdeconnect-*.pkg.tar.zst`
+- Fedora 44/45: `sudo dnf install ./kdeconnectd-*.rpm`
+- openSUSE Tumbleweed: `sudo zypper install ./kdeconnect-kde-*.rpm`
+
+These replace your distro's KDE Connect package, so when your distro updates KDE Connect you'll get the stock version back. Just reinstall from the releases page when that happens.
+
+### On other distros
+There are no packages for other distros, but you can build it yourself. You'll need Qt 6.9 and KDE Frameworks 6.3 or newer, so a fairly recent distro.
+
+The easiest way to get the build dependencies is to install the ones for your distro's own KDE Connect package (eg: `sudo apt build-dep kdeconnect` on Debian/Ubuntu, with source repos enabled). Then remove your distro's KDE Connect package and run:
+
+```bash
+git clone https://github.com/youssefnoser/kdeconnect-kde.git
+cd kdeconnect-kde
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DKDE_INSTALL_USE_QT_SYS_PATHS=ON
+cmake --build build
+sudo cmake --install build
+```
+
+To see your phone's screen you also need `adb` and `scrcpy` installed (on Arch: `sudo pacman -S android-tools scrcpy`, for other distros see [here](https://github.com/Genymobile/scrcpy/blob/master/doc/linux.md)), and USB or wireless debugging turned on in your phone's developer options.
+
 # KDE Connect - desktop app
 
 KDE Connect is a multi-platform app that allows your devices to communicate (eg: your phone and your computer).

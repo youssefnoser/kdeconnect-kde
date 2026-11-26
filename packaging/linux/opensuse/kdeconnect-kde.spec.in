@@ -1,0 +1,97 @@
+%global debug_package %{nil}
+%define __builder ninja
+
+Name:           kdeconnect-kde
+Version:        @RPM_VERSION@
+Release:        @RPM_RELEASE@
+Summary:        Communication between your phone and computer (KDE Connect community fork)
+
+License:        GPL-2.0-or-later
+URL:            https://invent.kde.org/network/kdeconnect-kde
+Source0:        kdeconnect-%{version}.tar.gz
+ExclusiveArch: x86_64
+
+Provides:       kdeconnect-kde-lang = %{version}-%{release}
+Provides:       kdeconnect-kde-zsh-completion = %{version}-%{release}
+Obsoletes:      kdeconnect-kde-lang < %{version}-%{release}
+Obsoletes:      kdeconnect-kde-zsh-completion < %{version}-%{release}
+
+Requires:       kf6-kirigami-imports
+Requires:       kf6-kitemmodels-imports
+Requires:       kf6-prison-imports
+Requires:       kf6-qqc2-desktop-style
+Requires:       kirigami-addons6
+Requires:       qt6-declarative-imports
+Requires:       qt6-multimedia-imports
+Requires:       qt6-wayland
+
+Recommends:     android-tools
+Recommends:     sshfs
+Suggests:       scrcpy
+
+%description
+KDE Connect enables all your devices to communicate with each other, providing
+notification sync, clipboard sharing, file transfer, remote input, multimedia
+control, SMS messaging, and virtual monitor support.
+
+Built by the KDE Connect developers and KDE Community, packaged from the
+community fork with the mirrorphone plugin. Install android-tools and scrcpy
+separately if you want ADB and screen mirroring support in mirrorphone.
+
+%prep
+%autosetup -n kdeconnect-%{version}
+
+%build
+%cmake_kf6 \
+    -DBUILD_TESTING=ON \
+    -DKDE_INSTALL_USE_QT_SYS_PATHS=ON
+%kf6_build
+
+%check
+export QT_QPA_PLATFORM=offscreen
+%ctest
+
+%install
+%kf6_install
+%find_lang %{name} --all-name
+
+%files -f %{name}.lang
+%license LICENSES/*
+%doc README.md
+%{_bindir}/kdeconnect-app
+%{_bindir}/kdeconnect-cli
+%{_bindir}/kdeconnectd
+%{_bindir}/kdeconnect-handler
+%{_bindir}/kdeconnect-indicator
+%{_bindir}/kdeconnect-sms
+%{_libdir}/libkdeconnectcore.so.*
+%{_libdir}/qt6/plugins/kdeconnect/
+%{_libdir}/qt6/plugins/kf6/kfileitemaction/kdeconnectfileitemaction.so
+%{_libdir}/qt6/plugins/kf6/kio/kdeconnect.so
+%{_libdir}/qt6/qml/org/kde/kdeconnect/
+%{_prefix}/lib/udev/rules.d/40-kdeconnect-uinput.rules
+%{_sysconfdir}/ufw/applications.d/kdeconnect
+%{_sysconfdir}/xdg/autostart/org.kde.kdeconnect.daemon.desktop
+%{_datadir}/Thunar/sendto/kdeconnect-thunar.desktop
+%{_datadir}/applications/org.kde.kdeconnect.app.desktop
+%{_datadir}/applications/org.kde.kdeconnect.daemon.desktop
+%{_datadir}/applications/org.kde.kdeconnect.handler.desktop
+%{_datadir}/applications/org.kde.kdeconnect.nonplasma.desktop
+%{_datadir}/applications/org.kde.kdeconnect.sms.desktop
+%{_datadir}/contractor/kdeconnect.contract
+%{_datadir}/dbus-1/services/org.kde.kdeconnect.service
+%{_datadir}/deepin/dde-file-manager/oem-menuextensions/kdeconnect-dde.desktop
+%{_datadir}/icons/hicolor/scalable/apps/kdeconnect*.svg
+%{_datadir}/kdeconnect/
+%{_datadir}/knotifications6/kdeconnect.notifyrc
+%{_datadir}/metainfo/org.kde.kdeconnect.metainfo.xml
+%{_datadir}/nautilus-python/extensions/kdeconnect-share.py
+%{_datadir}/plasma/plasmoids/org.kde.kdeconnect/
+%{_datadir}/qlogging-categories6/kdeconnect-kde.categories
+%{_datadir}/remoteview/kdeconnect-network.desktop
+%{_datadir}/solid/actions/solid_kdeconnect.desktop
+%{_datadir}/zsh/site-functions/_kdeconnect
+
+%changelog
+* Thu Nov 26 2026 KDE Connect Community Fork <https://invent.kde.org/network/kdeconnect-kde> - @RPM_VERSION@-@RPM_RELEASE@
+- Automated native openSUSE Tumbleweed RPM build

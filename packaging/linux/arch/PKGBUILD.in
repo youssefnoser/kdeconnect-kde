@@ -1,0 +1,86 @@
+# Maintainer: Youssef Noser <https://github.com/youssefnoser/kdeconnect-kde>
+# Upstream: KDE Connect developers and KDE Community (https://invent.kde.org/network/kdeconnect-kde)
+
+pkgname=kdeconnect
+pkgver=@ARCH_PKGVER@
+pkgrel=@ARCH_PKGREL@
+pkgdesc='Communication between your phone and computer (KDE Connect community fork with mirrorphone plugin)'
+arch=('x86_64')
+url='https://invent.kde.org/network/kdeconnect-kde'
+license=('GPL-2.0-or-later')
+depends=(
+  'dbus'
+  'gcc-libs'
+  'glibc'
+  'kcolorscheme'
+  'kconfig'
+  'kcoreaddons'
+  'kcrash'
+  'kdbusaddons'
+  'kguiaddons'
+  'ki18n'
+  'kiconthemes'
+  'kio'
+  'kirigami'
+  'kirigami-addons'
+  'kitemmodels'
+  'knotifications'
+  'kpackage'
+  'kpeople'
+  'kservice'
+  'kstatusnotifieritem'
+  'kwidgetsaddons'
+  'kwindowsystem'
+  'libei'
+  'libevdev'
+  'libfakekey'
+  'libx11'
+  'libxkbcommon'
+  'libxtst'
+  'modemmanager-qt'
+  'openssl'
+  'prison'
+  'pulseaudio-qt'
+  'qqc2-desktop-style'
+  'qt6-base'
+  'qt6-connectivity'
+  'qt6-declarative'
+  'qt6-multimedia'
+  'qt6-wayland'
+  'solid'
+  'wayland'
+)
+makedepends=(
+  'cmake'
+  'extra-cmake-modules'
+  'kpackage'
+  'ninja'
+  'wayland-protocols'
+)
+optdepends=('android-tools: ADB support for the mirrorphone plugin' 'scrcpy: screen mirroring support for the mirrorphone plugin'
+            'python-nautilus: Nautilus file manager integration'
+            'sshfs: remote filesystem browsing')
+options=('!debug')
+source=("${pkgname}-${pkgver}.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cmake -B build -S "${pkgname}-${pkgver}" -G Ninja \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DCMAKE_INSTALL_LIBDIR=lib \
+    -DKDE_INSTALL_LIBEXECDIR=lib \
+    -DKDE_INSTALL_USE_QT_SYS_PATHS=ON \
+    -DBUILD_TESTING=ON
+  cmake --build build
+}
+
+check() {
+  QT_QPA_PLATFORM=offscreen ctest --test-dir build --output-on-failure
+}
+
+package() {
+  DESTDIR="${pkgdir}" cmake --install build
+  install -Dm644 -t "${pkgdir}/usr/share/licenses/${pkgname}" \
+    "${pkgname}-${pkgver}/LICENSES/"*
+}

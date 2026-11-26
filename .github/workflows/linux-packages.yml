@@ -1,0 +1,94 @@
+name: Linux Packages
+
+on:
+  push:
+    branches:
+      - master
+      - openapp
+    tags:
+      - 'v*'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      commit_count: ${{ steps.meta.outputs.commit_count }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: meta
+        run: |
+          echo "commit_count=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: arch
+            distro: arch
+            container: archlinux:latest
+          - name: fedora-44
+            distro: fedora
+            container: fedora:44
+          - name: fedora-45
+            distro: fedora
+            container: fedora:45
+          - name: opensuse-tumbleweed
+            distro: opensuse
+            container: opensuse/tumbleweed
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build ${{ matrix.name }} package
+        env:
+          COMMIT_COUNT: ${{ needs.prepare.outputs.commit_count }}
+          SHORT_SHA: ${{ needs.prepare.outputs.short_sha }}
+        run: bash packaging/linux/build.sh ${{ matrix.distro }} . dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kdeconnect-${{ matrix.name }}-x86_64
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Write checksums and release notes
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS
+          {
+            echo "Native x86_64 packages for Arch Linux, Fedora and openSUSE Tumbleweed."
+            echo
+            echo '```'
+            cat SHA256SUMS
+            echo '```'
+          } > ../notes.md
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          body_path: notes.md
+          files: dist/*
