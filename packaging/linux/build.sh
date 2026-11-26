@@ -65,7 +65,7 @@ build_rpm() {
         "${SCRIPT_DIR}/${DISTRO}/kdeconnect-kde.spec.in" > "$spec"
 
     rpmbuild -bb --define "_topdir ${topdir}" "$spec"
-    cp -f "${topdir}"/RPMS/x86_64/*.x86_64.rpm "${OUT_DIR}/"
+    find "${topdir}/RPMS" -name '*.rpm' ! -name '*-debug*' -exec cp -f {} "${OUT_DIR}/" \;
 }
 
 case "$DISTRO" in
